@@ -94,6 +94,12 @@ class VideoDataset(Dataset):
             frames.append(frame)
             
         cap.release()
+        
+        if len(frames) > 300:
+            # sample 100 frames
+            indices = np.linspace(0, len(frames) - 1, 300, dtype=int)
+            frames = [frames[i] for i in indices]
+        
         return np.stack(frames)
 
     def __len__(self):
