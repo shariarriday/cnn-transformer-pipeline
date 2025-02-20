@@ -18,6 +18,7 @@ class VideoDataset(Dataset):
         self.transform = transform
         self.train = train
         self.num_frames = num_frames
+        self.target = kwargs.get("target", "l2_pose")
         self.data = self.remove_sequence_ids_with_missing_video()
         if train:
             self.filter_all_train_data()
@@ -114,9 +115,8 @@ class VideoDataset(Dataset):
         if self.transform:
             frames = self.transform(frames)
         
-        return frames, self.label_reverse_maps["l2_pose"][row["l2_pose_id"]]
+        return frames, self.label_reverse_maps[self.target][row[self.target + "_id"]]
     
-
 class CurriculumVideoDataset(VideoDataset):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

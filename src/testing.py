@@ -1,5 +1,6 @@
 import torch
 from sklearn.metrics import (classification_report)
+from torch.optim.swa_utils import AveragedModel, update_bn
 import pandas as pd
 from tqdm import tqdm
 import json
@@ -9,7 +10,7 @@ from .metrics import AdvancedMetricsTracker
 def test_model(model, test_loader, device, num_classes, label_maps, label_reverse_maps, target):
     
     # Load best model
-    checkpoint = torch.load('checkpoints/best_model.pth')
+    checkpoint = torch.load('checkpoints/best_model.pth', weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
     model = model.to(device)
     model.eval()

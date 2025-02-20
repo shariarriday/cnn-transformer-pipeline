@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import (
-    confusion_matrix, roc_curve, auc,
+    confusion_matrix, roc_curve, auc, classification_report,
     precision_recall_curve, average_precision_score
 )
 from collections import defaultdict
@@ -28,34 +28,6 @@ class AdvancedMetricsTracker:
             'epoch_labels': [],
             'epoch_probabilities': []
         }
-    
-    def calculate_per_class_metrics(self):
-        """Calculate per-class accuracy, precision, recall and f1 scores"""
-        y_true = np.array(self.metrics['epoch_labels'])
-        y_pred = np.array(self.metrics['epoch_predictions'])
-        
-        for class_idx in range(self.num_classes):
-            # Calculate binary metrics for current class
-            true_binary = (y_true == class_idx)
-            pred_binary = (y_pred == class_idx)
-            
-            # True Positives, False Positives, False Negatives
-            tp = np.sum((true_binary) & (pred_binary))
-            fp = np.sum((~true_binary) & (pred_binary))
-            fn = np.sum((true_binary) & (~pred_binary))
-            tn = np.sum((~true_binary) & (~pred_binary))
-            
-            # Calculate metrics
-            accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
-            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-            f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-            
-            # Store metrics
-            self.metrics['per_class_accuracies'][class_idx].append(accuracy * 100)
-            self.metrics['per_class_precisions'][class_idx].append(precision * 100)
-            self.metrics['per_class_recalls'][class_idx].append(recall * 100)
-            self.metrics['per_class_f1_scores'][class_idx].append(f1 * 100)
     
     def update_epoch_metrics(self, train_loss, val_loss, train_acc, val_acc, lr):
         self.metrics['train_losses'].append(train_loss)
@@ -99,13 +71,26 @@ class AdvancedMetricsTracker:
         ax3.grid(True)
         
         # Plot per-class metrics
-        self.calculate_per_class_metrics()
+        report_informations = classification_report(
+            self.metrics['epoch_labels'],
+            self.metrics['epoch_predictions'],
+            labels=list(range(self.num_classes)),
+            target_names=self.classes,
+            output_dict=True,
+            zero_division=0
+        )
+        
         for class_idx in range(self.num_classes):
-            ax4.plot(self.metrics['per_class_accuracies'][class_idx], 
+            self.metrics['per_class_precisions'][class_idx].append(
+                report_informations[self.classes[class_idx]]['precision']
+            )
+        
+        for class_idx in range(self.num_classes):
+            ax4.plot(self.metrics['per_class_precisions'][class_idx], 
                     label=f'{self.classes[class_idx]}')
         ax4.set_xlabel('Epoch')
-        ax4.set_ylabel('Accuracy (%)')
-        ax4.set_title('Per-Class Accuracy')
+        ax4.set_ylabel('Precision (%)')
+        ax4.set_title('Per-Class Precision')
         ax4.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         ax4.grid(True)
         
@@ -123,7 +108,7 @@ class AdvancedMetricsTracker:
         )
         
         cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(42, 14), gridspec_kw={'width_ratios': [1, 1.5]})
         
         # Raw counts
         sns.heatmap(

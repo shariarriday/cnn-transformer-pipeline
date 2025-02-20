@@ -1,5 +1,5 @@
 import torch
-from torchvision import transforms
+from torchvision.transforms import v2 as transforms
 import numpy as np
 import random
 
@@ -12,11 +12,17 @@ class VideoTransform:
         if self.mode == 'train':
             self.transform = transforms.Compose([
                 transforms.ToPILImage(),
-                transforms.RandomResizedCrop(self.input_size, scale=(0.8, 1.0)),
-                transforms.RandomHorizontalFlip(p=0.5),
-                transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
-                transforms.RandomGrayscale(p=0.1),
-                transforms.ToTensor(),
+                transforms.RandomResizedCrop(self.input_size, scale=(0.75, 1.0)),
+                transforms.RandomApply([
+                    transforms.RandomHorizontalFlip(p=0.5),
+                    transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
+                    transforms.RandomGrayscale(p=0.3),
+                    transforms.RandomPerspective(distortion_scale=0.2, p=0.3),
+                    transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+                    transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
+                    transforms.RandomInvert(p=0.3),
+                ]),
+                transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)]),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             ])
         else:
@@ -24,7 +30,7 @@ class VideoTransform:
                 transforms.ToPILImage(),
                 transforms.Resize(self.input_size),
                 transforms.CenterCrop(self.input_size),
-                transforms.ToTensor(),
+                transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)]),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             ])
     

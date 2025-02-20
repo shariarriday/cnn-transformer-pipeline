@@ -8,13 +8,11 @@ class CNNFeatureExtractor(nn.Module):
 		super(CNNFeatureExtractor, self).__init__()
 		self.cnn_backbone = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
 		self.cnn_backbone.fc = nn.Identity()
-		self.batch_norm = nn.BatchNorm1d(512)
 
 	def forward(self, x):
 		batch_size, num_frames, channels, height, width = x.shape
 		x = x.view(batch_size * num_frames, channels, height, width)
 		features = self.cnn_backbone(x)
-		features = self.batch_norm(features)
 		features = features.view(batch_size, num_frames, -1)
 		return features
 
@@ -82,7 +80,7 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 class TransformerEncoder(nn.Module):
-	def __init__(self, num_heads, num_layers, d_model, output_dim, dropout=0.1):
+	def __init__(self, num_heads, num_layers, d_model, output_dim, frames, dropout=0.1):
 		super(TransformerEncoder, self).__init__()
 		self.transformer_encoder_layer = nn.TransformerEncoderLayer(
 			d_model=d_model, nhead=num_heads, dropout=dropout, batch_first=True
@@ -93,10 +91,12 @@ class TransformerEncoder(nn.Module):
 		self.out = nn.Linear(d_model, output_dim)
 		self.pos_encoder = PositionalEncoding(d_model, dropout)
 		self.dropout = nn.Dropout(dropout)
+		self.batch_norm = nn.BatchNorm1d(frames)
 		torch.nn.init.kaiming_uniform_(self.out.weight, nonlinearity='relu')
 
 	def forward(self, x):
-		output = self.dropout(x)
+		output = self.batch_norm(x)
+		output = self.dropout(output)
 		output = self.pos_encoder(output)
 		output = self.transformer_encoder(output)
 		output = self.out(output)
@@ -131,6 +131,7 @@ class HybridCNNTransformerModel(nn.Module):
    			num_heads=transformer_heads,
       		num_layers=transformer_layers,
         	d_model=feature_dim,
+			frames=frame_samples,
          	dropout=dropout
 		)
 		self.classifier = MultiHeadClassifier(frame_samples * transformer_outputs, num_classes)
