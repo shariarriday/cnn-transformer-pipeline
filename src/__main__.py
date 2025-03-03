@@ -19,7 +19,7 @@ def main():
 
     args = parser.parse_args()
     
-    train_loader, val_loader, num_classes, _, label_maps, label_reverse_maps = create_dataloaders(
+    train_loader, val_loader, num_classes, test_loader, label_maps, label_reverse_maps = create_dataloaders(
     csv_file=args.csv_path,
     video_folder=args.video_path,
     num_frames=args.num_frames,
@@ -32,13 +32,13 @@ def main():
     # Create and train model
     model = HybridCNNTransformerModel(num_classes=num_classes[args.target+"_count"],
                                     feature_dim=512,
-                                    frame_samples=16,
+                                    frame_samples=args.num_frames,
                                     transformer_outputs=256,
                                     transformer_layers=4,
                                     transformer_heads=16,
                                     dropout=0.25)
 
-    model = train_video_classifier(
+    train_video_classifier(
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
@@ -50,15 +50,6 @@ def main():
         label_reverse_maps=label_reverse_maps,
         target=args.target,
         patience=4
-    )
-
-    # Create test dataloader
-    _, _, num_classes, test_loader, label_maps, label_reverse_maps = create_dataloaders(
-        csv_file=args.csv_path,
-        video_folder=args.video_path,
-        frames=args.num_frames,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers
     )
 
     # Test the model

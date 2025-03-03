@@ -36,7 +36,7 @@ class EarlyStopping:
         
         return self.early_stop
     
-def save_checkpoint(model, swa_model, optimizer, scheduler, swa_scheduler, epoch, val_loss, checkpoint_dir):
+def save_checkpoint(model, optimizer, scheduler, epoch, val_loss, checkpoint_dir):
     """Save model checkpoint"""
     checkpoint = {
         'epoch': epoch,
@@ -59,20 +59,6 @@ def save_checkpoint(model, swa_model, optimizer, scheduler, swa_scheduler, epoch
     if best_val_loss > val_loss:
         best_path = os.path.join(checkpoint_dir, 'best_model.pth')
         torch.save(checkpoint, best_path)
-    
-    if swa_model:
-        swa_checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': swa_model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': swa_scheduler.state_dict() if swa_scheduler else None,
-            'best_val_loss': val_loss,    
-        }
-        
-        # Save best model
-        if best_val_loss > val_loss:
-            swg_path = os.path.join(checkpoint_dir, 'swa_model.pth')
-            torch.save(swa_checkpoint, swg_path)
 
 def train_video_classifier(
     model, train_loader, val_loader, 
@@ -109,11 +95,6 @@ def train_video_classifier(
     
     # Gradient scaler for mixed precision
     scaler = GradScaler(device)
-    
-    # Stochastic Weight Averaging
-    swa_model = None
-    swa_scheduler = SWALR(optimizer, swa_lr=1e-4)
-    swa_start = num_epochs // 5
     
     # Main scheduler
     main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -171,13 +152,6 @@ def train_video_classifier(
             _, predicted = outputs.max(1)
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()
-            
-        # Update SWA model if in SWA phase
-        if epoch > swa_start and epoch % 3 == 0:
-            if swa_model is None:
-                swa_model = AveragedModel(model)
-            swa_model.update_parameters(model)
-            swa_scheduler.step()
         
         main_scheduler.step()
         
@@ -185,9 +159,7 @@ def train_video_classifier(
         train_accuracy = 100. * correct / total
         avg_train_loss = train_loss / len(train_loader)
         
-        # Validation phase with SWA model if in SWA phase
-        eval_model = swa_model if epoch > swa_start else model
-        eval_model.eval()
+        model.eval()
         
         val_loss = 0.0
         correct = 0
@@ -196,7 +168,7 @@ def train_video_classifier(
         with torch.no_grad():
             for videos, labels in tqdm(val_loader):
                 videos, labels = videos.to(device), labels.to(device)
-                outputs = eval_model(videos)
+                outputs = model(videos)
                 probabilities = torch.softmax(outputs, dim=1)
                 loss = criterion(outputs, labels)
                 
@@ -213,7 +185,7 @@ def train_video_classifier(
         avg_val_loss = val_loss / len(val_loader)
         
         # Update metrics
-        current_lr = swa_scheduler.get_last_lr()[0]
+        current_lr = main_scheduler.get_last_lr()[0]
         metrics.update_epoch_metrics(
             avg_train_loss, avg_val_loss, 
             train_accuracy, val_accuracy,
@@ -253,12 +225,8 @@ def train_video_classifier(
         with open(os.path.join(metrics_dir, f'classification_report_epoch_{epoch+1}.json'), 'w') as f:
             json.dump(report, f, indent=4)
         
-        # Update best validation accuracy and save checkpoint
-        if swa_model != None and epoch > swa_start and epoch % 3 == 0:
-            update_bn(train_loader, swa_model)
-            save_checkpoint(model, swa_model, optimizer, main_scheduler, swa_scheduler, epoch, avg_val_loss, checkpoint_dir)
-        else:
-            save_checkpoint(model, swa_model, optimizer, main_scheduler, swa_scheduler, epoch, avg_val_loss, checkpoint_dir)
+        
+        save_checkpoint(model, optimizer, main_scheduler, epoch, avg_val_loss, checkpoint_dir)
         
         # Early stopping check
         if early_stopping(avg_val_loss):
