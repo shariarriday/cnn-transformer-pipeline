@@ -71,7 +71,8 @@ def train_video_classifier(
     min_delta=0.01,
     target='l2_pose',
     label_maps=None,
-    label_reverse_maps=None
+    label_reverse_maps=None,
+    label_weights=None
 ):
     """Enhanced training loop with advanced metrics and early stopping"""
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -101,7 +102,10 @@ def train_video_classifier(
         optimizer, num_epochs
     )
     
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    label_ids = list(label_maps[target].keys())
+    label_weights = [label_weights[label_id] for label_id in label_ids]
+    
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.2, weight=torch.tensor(label_weights, dtype=torch.float).to(device))
     early_stopping = EarlyStopping(patience=patience, min_delta=min_delta)
     
     # Initialize metrics tracker
@@ -258,7 +262,6 @@ def create_dataloaders(*args, **kwargs):
 		train_ds,
 		batch_size=kwargs.get('batch_size', 8),
 		shuffle=True,
-		pin_memory=True,
 		num_workers=kwargs.get('num_workers', 4)
 	)
 
@@ -266,7 +269,6 @@ def create_dataloaders(*args, **kwargs):
 		valid_ds,
 		batch_size=kwargs.get('batch_size', 8),
 		shuffle=False,
-		pin_memory=True,
 		num_workers=kwargs.get('num_workers', 4)
 	)
 
@@ -274,9 +276,9 @@ def create_dataloaders(*args, **kwargs):
 		video_dataset_test,
 		batch_size=kwargs.get('batch_size', 8),
 		shuffle=False,
-		pin_memory=True,
 		num_workers=kwargs.get('num_workers', 4)
 	)
 
 	label_counts, label_maps, label_reverse_maps = video_dataset_train._get_label_map()
-	return train_loader, val_loader, label_counts, test_loader, label_maps, label_reverse_maps
+	label_weights = video_dataset_train._get_label_weights()
+	return train_loader, val_loader, label_weights, label_counts, test_loader, label_maps, label_reverse_maps

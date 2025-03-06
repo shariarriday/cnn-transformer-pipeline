@@ -50,6 +50,30 @@ class VideoDataset(Dataset):
         }
 
         return label_counts, label_maps, label_reverse_maps
+    
+    def _get_label_weights(self):
+        """
+        Get relative weights for each label.
+        """
+        train_data = pd.read_csv(self.csv)
+
+        label_columns = ["l1_pose_id", "l2_pose_id", "l3_pose_id"]
+        label_weights = {}
+
+        for col in label_columns:
+            target_name = col.replace("_id", "")
+            # Count occurrences of each label
+            counts = train_data[col].value_counts()
+            # Calculate inverse frequency (to give more weight to less frequent classes)
+            total_samples = len(train_data)
+            weights = total_samples / (counts * len(counts))
+            # Normalize weights
+            weights = weights / weights.sum()
+            
+            # Create dictionary mapping from label_id to weight
+            label_weights[target_name] = {label_id: weights[label_id] for label_id in counts.index}
+
+        return label_weights
         
     def remove_sequence_ids_with_missing_video(self):
         """
@@ -91,6 +115,7 @@ class VideoDataset(Dataset):
             ret, frame = cap.read()
             if not ret:
                 break
+            frame = cv2.resize(frame, (640, 360))
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frames.append(frame)
             
@@ -120,13 +145,15 @@ class VideoDataset(Dataset):
 class CurriculumVideoDataset(VideoDataset):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.highest_frame = kwargs.get('num_frames', 16)
         self.curriculum_stage = 0
-        self.max_stages = 4
-        self.frame_lengths = [4, 8, 12, 16]  # Increasing sequence lengths
+        self.max_stages = 1
+        self.num_frames = self.highest_frame
+        self.frame_lengths = [self.highest_frame, self.highest_frame // 2, self.highest_frame]  # Increasing sequence lengths
         
     def update_curriculum(self, epoch):
         """Update curriculum stage based on epoch"""
-        self.curriculum_stage = min(epoch // 5, self.max_stages - 1)
+        self.curriculum_stage = min(epoch // 4, self.max_stages - 1)
         self.num_frames = self.frame_lengths[self.curriculum_stage]
         
     def __getitem__(self, idx):
