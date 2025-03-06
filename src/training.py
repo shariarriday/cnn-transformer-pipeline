@@ -104,6 +104,8 @@ def train_video_classifier(
     
     label_ids = list(label_maps[target].keys())
     label_weights = [label_weights[label_id] for label_id in label_ids]
+    min_weight = min(label_weights)
+    label_weights = [weight / min_weight for weight in label_weights]
     
     criterion = nn.CrossEntropyLoss(label_smoothing=0.2, weight=torch.tensor(label_weights, dtype=torch.float).to(device))
     early_stopping = EarlyStopping(patience=patience, min_delta=min_delta)
