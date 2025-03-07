@@ -92,7 +92,7 @@ def train_video_classifier(
         start_epoch = checkpoint['epoch'] + 1
     
     # Initialize optimizers and schedulers
-    optimizer = torch.optim.Adafactor(model.parameters(), lr=1e-4, weight_decay=1e-3)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.05)
     
     # Gradient scaler for mixed precision
     scaler = GradScaler(device)
@@ -107,7 +107,7 @@ def train_video_classifier(
     min_weight = min(label_weights)
     label_weights = [weight / min_weight for weight in label_weights]
     
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.2, weight=torch.tensor(label_weights, dtype=torch.float).to(device))
+    criterion = nn.CrossEntropyLoss(weight=torch.tensor(label_weights, dtype=torch.float).to(device))
     early_stopping = EarlyStopping(patience=patience, min_delta=min_delta)
     
     # Initialize metrics tracker
@@ -256,7 +256,8 @@ def create_dataloaders(*args, **kwargs):
 
 	train_ds, valid_ds = torch.utils.data.random_split(
 		video_dataset_train, 
-		[0.85, 0.15]
+		[0.85, 0.15],
+        generator=torch.Generator().manual_seed(42)
 	)
 
 	# Use PyTorch's DataLoader with memory pinning

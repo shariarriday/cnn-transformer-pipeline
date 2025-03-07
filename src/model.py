@@ -29,54 +29,27 @@ class PositionalEncoding(nn.Module):
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         
-        # Learnable temporal components
-        self.temporal_token = nn.Parameter(torch.randn(1, 1, d_model))
-        self.temporal_attention = nn.MultiheadAttention(d_model, num_heads=8, batch_first=True)
-        self.temporal_mlp = nn.Sequential(
-            nn.Linear(d_model, d_model * 4),
-            nn.GELU(),
-            nn.Linear(d_model * 4, d_model),
-            nn.Dropout(dropout)
-        )
-        
-        # Layer norms for attention and MLP
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
-        
-        # Learnable scale factor for positional encoding
-        self.scale = nn.Parameter(torch.ones(1))
+        # Learnable temporal importance
+        self.temporal_importance = nn.Parameter(torch.ones(1))
+        self.layer_norm = nn.LayerNorm(d_model)
         
         self.register_buffer('pe', pe)
         
     def forward(self, x):
         seq_len = x.size(1)
-        batch_size = x.size(0)
         
-        # Add scaled positional encoding
+        # Generate temporal weights
+        temporal_weights = torch.arange(seq_len, device=x.device).float() / seq_len
+        temporal_weights = torch.sigmoid(temporal_weights * self.temporal_importance)
+        temporal_weights = temporal_weights.unsqueeze(-1)
+        
+        # Apply weighted positional encoding
         pos_encoding = self.pe[:seq_len, :]
-        x = x + self.scale * pos_encoding
+        weighted_encoding = pos_encoding * temporal_weights
         
-        # Expand temporal token for batch
-        temp_tokens = self.temporal_token.expand(batch_size, -1, -1)
-        
-        # Concatenate temporal token with input
-        x_with_temp = torch.cat([temp_tokens, x], dim=1)
-        
-        # Self-attention with temporal token
-        attended, _ = self.temporal_attention(
-            x_with_temp, x_with_temp, x_with_temp,
-            need_weights=False
-        )
-        x_with_temp = x_with_temp + self.dropout(attended)
-        x_with_temp = self.norm1(x_with_temp)
-        
-        # MLP block
-        x_with_temp = x_with_temp + self.dropout(self.temporal_mlp(x_with_temp))
-        x_with_temp = self.norm2(x_with_temp)
-        
-        # Remove temporal token
-        x = x_with_temp[:, 1:, :]
-        
+        # Combine with input through layer norm
+        x = x + weighted_encoding
+        x = self.layer_norm(x)
         return self.dropout(x)
 
 class TransformerEncoder(nn.Module):
@@ -103,6 +76,46 @@ class TransformerEncoder(nn.Module):
 
 		return output
 
+class TransformerDecoder(nn.Module):
+    def __init__(self, num_heads, num_layers, d_model, output_dim, dropout=0.1):
+        super(TransformerDecoder, self).__init__()
+        
+        # Decoder layers
+        decoder_layer = nn.TransformerDecoderLayer(
+            d_model=d_model, 
+            nhead=num_heads, 
+            dropout=dropout, 
+            batch_first=True
+        )
+        self.transformer_decoder = nn.TransformerDecoder(
+            decoder_layer, 
+            num_layers=num_layers
+        )
+        
+        # Output projection
+        self.out = nn.Linear(d_model, output_dim)
+        
+        # Query embedding that will be learned
+        self.query_embed = nn.Parameter(torch.randn(1, 8, d_model))
+        
+        # Normalization
+        self.norm = nn.LayerNorm(d_model)
+        
+        # Initialization
+        torch.nn.init.xavier_uniform_(self.out.weight)
+    
+    def forward(self, tgt, memory):
+        # Expand query embeddings to batch size
+        batch_size = memory.size(0)
+        query_embed = self.query_embed.expand(batch_size, -1, -1)
+        
+        # Apply transformer decoder
+        output = self.transformer_decoder(query_embed, memory)
+        output = self.norm(output)
+        output = self.out(output)
+        
+        return output
+
 class MultiHeadClassifier(nn.Module):
     def __init__(self, d_model, num_classes):
         super(MultiHeadClassifier, self).__init__()
@@ -122,22 +135,41 @@ class HybridCNNTransformerModel(nn.Module):
 		transformer_heads=8,
 		transformer_layers=4,
 		transformer_outputs=64,
+		decoder_layers=2,
 		dropout=0.1
 	):
 		super(HybridCNNTransformerModel, self).__init__()
 		self.cnn_feature_extractor = CNNFeatureExtractor()
+		
+		# Encoder
 		self.transformer_encoder = TransformerEncoder(
-			output_dim=transformer_outputs, 
-   			num_heads=transformer_heads,
-      		num_layers=transformer_layers,
-        	d_model=feature_dim,
+			output_dim=feature_dim,  # Keep same dimension for encoder output 
+			num_heads=transformer_heads,
+			num_layers=transformer_layers,
+			d_model=feature_dim,
 			frames=frame_samples,
-         	dropout=dropout
+			dropout=dropout
 		)
-		self.classifier = MultiHeadClassifier(frame_samples * transformer_outputs, num_classes)
+		
+		# Decoder
+		self.transformer_decoder = TransformerDecoder(
+			num_heads=transformer_heads,
+			num_layers=decoder_layers,
+			d_model=feature_dim,
+			output_dim=transformer_outputs,
+			dropout=dropout
+		)
+		
+		# Classification head
+		self.classifier = MultiHeadClassifier(8 * transformer_outputs, num_classes)
 
 	def forward(self, x):
 		features = self.cnn_feature_extractor(x)
-		transformer_output = self.transformer_encoder(features)
-		out = self.classifier(transformer_output)
+		encoder_output = self.transformer_encoder(features)
+		
+		# Process with transformer decoder
+		# Using encoder output as both target and memory since we're doing self-attention
+		decoder_output = self.transformer_decoder(encoder_output, encoder_output)
+		out = self.classifier(decoder_output)
+		
 		return out

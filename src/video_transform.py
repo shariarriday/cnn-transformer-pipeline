@@ -40,12 +40,6 @@ class VideoTransform:
         start = random.randint(0, len(frames) - self.num_frames)
         return frames[start:start + self.num_frames]
     
-    def temporal_jitter(self, frames, max_skip=3):
-        if len(frames) <= self.num_frames:
-            return frames
-        indices = sorted(random.sample(range(len(frames)), self.num_frames))
-        return [frames[i] for i in indices]
-    
     def speed_perturbation(self, frames, speed_range=(0.8, 1.2)):
         if len(frames) <= 1:
             return frames
@@ -68,7 +62,6 @@ class VideoTransform:
     def __call__(self, frames):
         if self.mode == 'train':
             frames = self.temporal_crop(frames)
-            frames = self.temporal_jitter(frames)
             frames = self.speed_perturbation(frames)
             frames = self.frame_dropout(frames)
         
