@@ -11,8 +11,7 @@ from tqdm import tqdm
 import json
 
 from .metrics import AdvancedMetricsTracker
-from .video_dataset import CurriculumVideoDataset
-from .video_transform import VideoTransform
+from .pose_dataset import PoseDataset
 
 class EarlyStopping:
     """Early stopping to prevent overfitting"""
@@ -69,10 +68,7 @@ def train_video_classifier(
     metrics_dir='metrics',
     patience=4,
     min_delta=0.01,
-    target='l2_pose',
-    label_maps=None,
-    label_reverse_maps=None,
-    label_weights=None
+    label_maps=None
 ):
     """Enhanced training loop with advanced metrics and early stopping"""
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -102,20 +98,15 @@ def train_video_classifier(
         optimizer, num_epochs
     )
     
-    label_ids = list(label_maps[target].keys())
-    label_weights = [label_weights[label_id] for label_id in label_ids]
-    min_weight = min(label_weights)
-    label_weights = [weight / min_weight for weight in label_weights]
-    
-    criterion = nn.CrossEntropyLoss(weight=torch.tensor(label_weights, dtype=torch.float).to(device))
+    criterion = nn.CrossEntropyLoss(label_smoothing=1e-2)
     early_stopping = EarlyStopping(patience=patience, min_delta=min_delta)
     
     # Initialize metrics tracker
     classes = []
     for i in range(num_classes):
-        for item in label_reverse_maps[target].items():
+        for item in label_maps.items():
             if item[1] == i:
-                classes.append(label_maps[target][item[0]])
+                classes.append(label_maps[item[0]])
     
     metrics = AdvancedMetricsTracker(num_classes=num_classes, classes=classes)
     
@@ -124,9 +115,6 @@ def train_video_classifier(
     model = model.to(device)
     
     for epoch in range(start_epoch, num_epochs):
-        # Update curriculum
-        if isinstance(train_loader.dataset, CurriculumVideoDataset):
-            train_loader.dataset.update_curriculum(epoch)
         
         # Training phase
         model.train()
@@ -250,38 +238,35 @@ def train_video_classifier(
     return model
     
 def create_dataloaders(*args, **kwargs):
-	"""Create train and validation dataloaders from a directory of videos"""
-	video_dataset_train = CurriculumVideoDataset(*args, train=True, transform=VideoTransform(kwargs.get('num_frames', 16), kwargs.get('image_size', 224), mode='train'), **kwargs)
-	video_dataset_test = CurriculumVideoDataset(*args, train=False, transform=VideoTransform(kwargs.get('num_frames', 16), kwargs.get('image_size', 224), mode='test'), **kwargs)
+    """Create train and validation dataloaders from a directory of pose JSON files"""
+    pose_dataset = PoseDataset(*args, **kwargs)
 
-	train_ds, valid_ds = torch.utils.data.random_split(
-		video_dataset_train, 
-		[0.85, 0.15],
+    train_ds, valid_ds, test_ds = torch.utils.data.random_split(
+        pose_dataset, 
+        [0.7, 0.15, .15],
         generator=torch.Generator().manual_seed(42)
-	)
+    )
 
-	# Use PyTorch's DataLoader with memory pinning
-	train_loader = DataLoader(
-		train_ds,
-		batch_size=kwargs.get('batch_size', 8),
-		shuffle=True,
-		num_workers=kwargs.get('num_workers', 4)
-	)
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=kwargs.get('batch_size', 8),
+        shuffle=True,
+        num_workers=kwargs.get('num_workers', 4)
+    )
 
-	val_loader = DataLoader(
-		valid_ds,
-		batch_size=kwargs.get('batch_size', 8),
-		shuffle=False,
-		num_workers=kwargs.get('num_workers', 4)
-	)
+    val_loader = DataLoader(
+        valid_ds,
+        batch_size=kwargs.get('batch_size', 8),
+        shuffle=False,
+        num_workers=kwargs.get('num_workers', 4)
+    )
 
-	test_loader = DataLoader(
-		video_dataset_test,
-		batch_size=kwargs.get('batch_size', 8),
-		shuffle=False,
-		num_workers=kwargs.get('num_workers', 4)
-	)
+    test_loader = DataLoader(
+        test_ds,
+        batch_size=kwargs.get('batch_size', 8),
+        shuffle=False,
+        num_workers=kwargs.get('num_workers', 4)
+    )
 
-	label_counts, label_maps, label_reverse_maps = video_dataset_train._get_label_map()
-	label_weights = video_dataset_train._get_label_weights()
-	return train_loader, val_loader, label_weights, label_counts, test_loader, label_maps, label_reverse_maps
+    label_maps = pose_dataset._get_label_map()
+    return train_loader, val_loader, test_loader, label_maps
