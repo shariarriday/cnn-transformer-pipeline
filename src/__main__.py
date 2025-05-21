@@ -9,11 +9,12 @@ from .training import create_dataloaders, train_video_classifier
 def main():
     parser = argparse.ArgumentParser(description='Process video frames for training or testing.')
     parser.add_argument('--num_workers', type=int, default=4, help='Number workers for dataloader')
-    parser.add_argument('--input_size', type=int, default=224, help='Input size for the frames')
     parser.add_argument('--batch_size', type=int, default=4, help='Batch size for the dataloader')
     parser.add_argument('--epochs', type=int, default=25, help='Number of epochs to train')
     parser.add_argument('--csv_path', type=str, required=True, help='Path to the csv files')
-    parser.add_argument('--target', type=str, default='l2_pose', help='target name')
+    parser.add_argument('--hidden_dim', type=int, default=1024, help='Number of hidden dimensions')
+    parser.add_argument('--num_layers', type=int, default=512, help='Number of LSTM layers')
+    parser.add_argument('--num_frames', type=int, default=60, help='Number of frames to process')
 
     args = parser.parse_args()
     
@@ -21,14 +22,15 @@ def main():
     csv_path=args.csv_path,
     batch_size=args.batch_size,
     num_workers=args.num_workers,
-    target=args.target
+    num_frames=args.num_frames,
     )
 
     # Create and train model
     model = BiLSTMClassifier(num_classes=len(label_maps.keys()),
                                     input_dim=99,
-                                    hidden_dim=256,
-                                    num_layers=512,
+                                    hidden_dim=int(args.hidden_dim),
+                                    num_layers=int(args.num_layers),
+                                    bidirectional=True,
                                     dropout=0.2)
 
     train_video_classifier(
