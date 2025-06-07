@@ -7,8 +7,8 @@ import json
 
 from .metrics import AdvancedMetricsTracker
 
-def test_model(model, test_loader, device, num_classes, label_maps, label_reverse_maps, target):
-    
+def test_model(model, test_loader, device, num_classes, label_maps, num_layers=2, hidden_dim=1024):
+   
     # Load best model
     checkpoint = torch.load('checkpoints/best_model.pth', weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -18,9 +18,9 @@ def test_model(model, test_loader, device, num_classes, label_maps, label_revers
     # Initialize metrics tracker
     classes = []
     for i in range(num_classes):
-        for item in label_reverse_maps[target].items():
+        for item in label_maps.items():
             if item[1] == i:
-                classes.append(label_maps[target][item[0]])
+                classes.append(item[0])
 
     metrics = AdvancedMetricsTracker(num_classes=num_classes, classes=classes)
 
@@ -32,10 +32,14 @@ def test_model(model, test_loader, device, num_classes, label_maps, label_revers
         for videos, labels in tqdm(test_loader, desc="Testing"):
             videos = videos.to(device)
             labels = labels.to(device)
+            
+            h = torch.zeros(num_layers, labels.shape[0], hidden_dim).to(device)
+            c = torch.zeros(num_layers, labels.shape[0], hidden_dim).to(device)
 
-            outputs = model(videos)
-            probabilities = torch.softmax(outputs, dim=1)
-            _, predicted = outputs.max(1)
+            outputs, hn, cn = model(videos, h, c)
+            # Use the last output for classification
+            probabilities = torch.softmax(outputs[:, -1, :], dim=1)
+            _, predicted = outputs[:, -1, :].max(1)
 
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()

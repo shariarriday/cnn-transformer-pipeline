@@ -5,20 +5,20 @@ from torch.utils.data import Dataset
 import numpy as np
 
 class PoseDataset(Dataset):
-    def __init__(self, *args, **kwargs):
-        self.csv_path = kwargs.get('csv_path', "")
-        self.num_frames = kwargs.get('num_frames', 30)
+    def __init__(self, path, transform=None):
+        self.path = path
+        self.transform = transform
         self.samples = []
         self.class_names = set()
         # Scan all json files and build index
-        for fname in os.listdir(self.csv_path):
+        for fname in os.listdir(self.path):
             if fname.endswith('.json'):
-                class_name = fname.split(',')[0]
-                self.class_names.add(class_name)
-                self.samples.append((os.path.join(self.csv_path, fname), class_name))
+                self.class_names.add(fname.split('__')[0])
+                self.samples.append((os.path.join(self.path, fname), fname.split('__')[0]))
         self.class_names = sorted(list(self.class_names))
         self.class_to_idx = {c: i for i, c in enumerate(self.class_names)}
-
+        print(self.class_to_idx)    
+        
     def __len__(self):
         return len(self.samples)
 
@@ -26,16 +26,22 @@ class PoseDataset(Dataset):
         json_path, class_name = self.samples[idx]
         with open(json_path, 'r') as f:
             pose_sequence = json.load(f)
-        arr = np.array([[[kp['x'], kp['y'], kp['z']] for kp in pose] for pose in pose_sequence], dtype=np.float32)
-        arr = arr.reshape(arr.shape[0], -1)  # Flatten the keypoints
-        if arr.shape[0] > self.num_frames:
-            indices = np.linspace(0, arr.shape[0] - 1, self.num_frames, dtype=int)
-            arr = arr[indices]
-        elif arr.shape[0] < self.num_frames:
-            pad = np.zeros((self.num_frames - arr.shape[0], arr.shape[1]), dtype=np.float32)
-            arr = np.concatenate([arr, pad], axis=0)
+        pose_data = []
+        for poses in pose_sequence:
+            all_data = []
+            for kp in poses:
+                all_data.append(np.array([kp['x'], kp['y'], kp['z']], dtype=np.float32).reshape(3, -1))
+            if len(all_data) == 33:        
+                pose_data.append(all_data)
+        arr = np.array(pose_data, dtype=np.float32)
+        arr = arr.reshape(arr.shape[0], -1)
+        
+        # Apply transforms if provided
+        if self.transform is not None:
+            arr = self.transform(arr)
+        
         label = self.class_to_idx[class_name]
         return torch.from_numpy(arr), label
-    
+   
     def _get_label_map(self):
         return self.class_to_idx
