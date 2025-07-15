@@ -30,7 +30,7 @@ class PoseDataset(Dataset):
         for poses in pose_sequence:
             all_data = []
             for kp in poses:
-                all_data.append(np.array([kp['x'], kp['y'], kp['z']], dtype=np.float32).reshape(3, -1))
+                all_data.append(np.array([kp['x'], kp['y'], kp['z'],kp['visibility']], dtype=np.float32).reshape(4, -1))
             if len(all_data) == 33:        
                 pose_data.append(all_data)
         arr = np.array(pose_data, dtype=np.float32)

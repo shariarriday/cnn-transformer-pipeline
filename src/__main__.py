@@ -27,7 +27,7 @@ def main():
 
     # Create and train model
     model = LSTM(output_size=len(label_maps.keys()),
-                                    input_size=99,
+                                    input_size=132,
                                     hidden_size=int(args.hidden_dim),
                                     num_layers=int(args.num_layers))
 
@@ -42,7 +42,7 @@ def main():
         label_maps=label_maps,
         num_layers=int(args.num_layers) * 2,  # LSTM is bidirectional
         hidden_dim=int(args.hidden_dim),
-        patience=10
+        patience=25
     )
 
     # Test the model

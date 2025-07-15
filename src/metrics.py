@@ -43,7 +43,7 @@ class AdvancedMetricsTracker:
    
     def plot_training_curves(self, save_path=None):
         """Plot comprehensive training curves"""
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(35, 20))
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(100, 50))
        
         # Plot losses
         ax1.plot(self.metrics['train_losses'], label='Train Loss')
@@ -108,7 +108,7 @@ class AdvancedMetricsTracker:
         )
        
         cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(82, 28), gridspec_kw={'width_ratios': [1, 1.5]})
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(160, 55), gridspec_kw={'width_ratios': [1, 1.5]})
        
         # Raw counts
         sns.heatmap(
@@ -144,7 +144,7 @@ class AdvancedMetricsTracker:
    
     def plot_roc_curves(self, save_path=None):
         """Plot ROC curves for each class"""
-        plt.figure(figsize=(10, 8))
+        plt.figure(figsize=(40, 20))
        
         # Compute ROC curve for each class
         for i in range(self.num_classes):
@@ -172,7 +172,7 @@ class AdvancedMetricsTracker:
    
     def plot_precision_recall_curves(self, save_path=None):
         """Plot precision-recall curves for each class"""
-        plt.figure(figsize=(10, 8))
+        plt.figure(figsize=(40, 20))
        
         for i in range(self.num_classes):
             y_true = np.array(self.metrics['epoch_labels'][len(self.metrics['epoch_labels'])-1]) == i

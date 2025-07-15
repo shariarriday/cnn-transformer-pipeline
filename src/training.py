@@ -91,7 +91,7 @@ def train_video_classifier(
         start_epoch = checkpoint['epoch'] + 1
    
     # Initialize optimizers and schedulers
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5, weight_decay=1e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
    
     # Gradient scaler for mixed precision
     scaler = GradScaler(device)
@@ -101,7 +101,7 @@ def train_video_classifier(
         optimizer, num_epochs
     )
    
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
     early_stopping = EarlyStopping(patience=patience, min_delta=min_delta)
    
     # Initialize metrics tracker
@@ -233,7 +233,7 @@ def train_video_classifier(
         print(f'Epoch [{epoch+1}/{num_epochs}]')
         print(f'Train Loss: {avg_train_loss:.4f}, Train Acc: {train_accuracy:.2f}%')
         print(f'Val Loss: {avg_val_loss:.4f}, Val Acc: {val_accuracy:.2f}%')
-        print(f'Learning Rate: {current_lr:.6f}')
+        print(f'Learning Rate: {current_lr:.8f}')
         print('\nClassification Report:')
         print(pd.DataFrame(report).transpose())
         print('-' * 80)
