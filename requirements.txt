@@ -3,3 +3,10 @@ numpy
 Pillow
 opencv-python
 scikit-image
+nibabel
+scipy
+scikit-learn
+matplotlib
+seaborn
+tqdm
+pandas

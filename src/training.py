@@ -63,15 +63,11 @@ def save_checkpoint(model, optimizer, scheduler, epoch, val_loss, checkpoint_dir
 def train_video_classifier(
     model, train_loader, val_loader,
     num_epochs=20,
-    num_classes=1,
     device='cuda',
     checkpoint_dir='checkpoints',
     metrics_dir='metrics',
     patience=4,
-    min_delta=0.01,
-    label_maps=None,
-    num_layers=1,
-    hidden_dim=1024,
+    min_delta=0.01
 ):
     """Enhanced training loop with advanced metrics and early stopping"""
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -100,19 +96,11 @@ def train_video_classifier(
     main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, num_epochs
     )
-   
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+
+    criterion = nn.MSELoss()
     early_stopping = EarlyStopping(patience=patience, min_delta=min_delta)
    
-    # Initialize metrics tracker
-    classes = []
-    for i in range(num_classes):
-        for item in label_maps.items():
-            if item[1] == i:
-                classes.append(item[0])
-    
-    print(f"Classes: {classes}")
-    metrics = AdvancedMetricsTracker(num_classes=num_classes, classes=classes)
+    metrics = AdvancedMetricsTracker()
    
     # Enable gradient checkpointing
     model.train()
@@ -123,105 +111,53 @@ def train_video_classifier(
         # Training phase
         model.train()
         train_loss = 0.0
-        correct = 0
-        total = 0
-        all_predictions = []
-        all_labels = []
-        all_probabilities = []
 
-        for batch_idx, (videos, labels) in enumerate(tqdm(train_loader)):
-            videos, labels = videos.to(device), labels.to(device)
+        for batch_idx, (videos) in enumerate(tqdm(train_loader)):
+            videos = videos.to(device)
            
-            h = torch.zeros(num_layers, labels.shape[0], hidden_dim).to(device)
-            c = torch.zeros(num_layers, labels.shape[0], hidden_dim).to(device)
-
             optimizer.zero_grad()
-            outputs, h, c = model(videos, h, c)
-            loss = criterion(outputs[:, -1, :], labels)
+            
+            outputs = model(videos)
+            loss = criterion(outputs, videos)
             loss.backward()
             optimizer.step()
            
             train_loss += loss.item()
-            _, predicted = outputs[:, -1, :].max(1)
-
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
        
         main_scheduler.step()
        
         # Calculate metrics and save checkpoints
-        train_accuracy = 100. * correct / total
         avg_train_loss = train_loss / len(train_loader)
        
         model.eval()
        
         val_loss = 0.0
-        correct = 0
-        total = 0
        
         with torch.no_grad():
-            for videos, labels in tqdm(val_loader):
-                videos, labels = videos.to(device), labels.to(device)
-
-                h0 = torch.zeros(num_layers, labels.shape[0], hidden_dim).to(device)
-                c0 = torch.zeros(num_layers, labels.shape[0], hidden_dim).to(device)
-                outputs, hn, cn = model(videos, h0, c0)
-                probabilities = torch.softmax(outputs[:, -1, :], dim=1)
-                loss = criterion(outputs[:, -1, :], labels)
-               
+            for videos in tqdm(val_loader):
+                videos = videos.to(device)
+           
+                optimizer.zero_grad()
+                
+                outputs = model(videos)
+                loss = criterion(outputs, videos)
+                loss.backward()
+                optimizer.step()
                 val_loss += loss.item()
-                _, predicted = outputs[:, -1, :].max(1)
-               
-                total += labels.size(0)
-                correct += predicted.eq(labels).sum().item()
-               
-                all_predictions.extend(predicted.cpu().numpy())
-                all_labels.extend(labels.cpu().numpy())
-                all_probabilities.extend(probabilities.cpu().numpy())
-       
-        val_accuracy = 100. * correct / total
+
         avg_val_loss = val_loss / len(val_loader)
        
         # Update metrics
         current_lr = main_scheduler.get_last_lr()[0]
         metrics.update_epoch_metrics(
             avg_train_loss, avg_val_loss,
-            train_accuracy, val_accuracy,
             current_lr
-        )
-        metrics.update_predictions(
-            torch.tensor(all_predictions),
-            torch.tensor(all_labels),
-            torch.tensor(all_probabilities)
         )
        
         # Save all plots
         metrics.plot_training_curves(
             save_path=os.path.join(metrics_dir, f'training_curves_epoch_{epoch+1}.png')
         )
-        metrics.plot_confusion_matrix(
-            save_path=os.path.join(metrics_dir, f'confusion_matrix_epoch_{epoch+1}.png')
-        )
-        metrics.plot_roc_curves(
-            save_path=os.path.join(metrics_dir, f'roc_curves_epoch_{epoch+1}.png')
-        )
-        metrics.plot_precision_recall_curves(
-            save_path=os.path.join(metrics_dir, f'pr_curves_epoch_{epoch+1}.png')
-        )
-       
-        # Save classification report
-        report = classification_report(
-            metrics.metrics['epoch_labels'][len(metrics.metrics['epoch_labels'])-1],
-            metrics.metrics['epoch_predictions'][len(metrics.metrics['epoch_labels'])-1],
-            labels=list(range(num_classes)),
-            target_names=metrics.classes,
-            output_dict=True,
-            zero_division=0
-        )
-       
-        # Save report as JSON
-        with open(os.path.join(metrics_dir, f'classification_report_epoch_{epoch+1}.json'), 'w') as f:
-            json.dump(report, f, indent=4)
        
         save_checkpoint(model, optimizer, main_scheduler, epoch, avg_val_loss, checkpoint_dir)
        
@@ -231,11 +167,9 @@ def train_video_classifier(
             break
        
         print(f'Epoch [{epoch+1}/{num_epochs}]')
-        print(f'Train Loss: {avg_train_loss:.4f}, Train Acc: {train_accuracy:.2f}%')
-        print(f'Val Loss: {avg_val_loss:.4f}, Val Acc: {val_accuracy:.2f}%')
+        print(f'Train Loss: {avg_train_loss:.4f}')
+        print(f'Val Loss: {avg_val_loss:.4f}')
         print(f'Learning Rate: {current_lr:.8f}')
-        print('\nClassification Report:')
-        print(pd.DataFrame(report).transpose())
         print('-' * 80)
        
     return model
@@ -244,7 +178,6 @@ def create_dataloaders(*args, **kwargs):
     """Create train and validation dataloaders from a directory of pose JSON files"""
     pose_dataset_train = PoseDataset(os.path.join(kwargs.get('path'), 'train'), get_training_transforms())
     pose_dataset_val = PoseDataset(os.path.join(kwargs.get('path'), 'val'), get_validation_transforms())
-    pose_dataset_test = PoseDataset(os.path.join(kwargs.get('path'), 'test'), get_test_transforms())
 
     train_loader = DataLoader(
         pose_dataset_train,
@@ -260,12 +193,4 @@ def create_dataloaders(*args, **kwargs):
         num_workers=kwargs.get('num_workers', 4)
     )
 
-    test_loader = DataLoader(
-        pose_dataset_test,
-        batch_size=kwargs.get('batch_size', 4),
-        shuffle=False,
-        num_workers=kwargs.get('num_workers', 4)
-    )
-
-    label_maps = pose_dataset_train._get_label_map()
-    return train_loader, val_loader, test_loader, label_maps
+    return train_loader, val_loader

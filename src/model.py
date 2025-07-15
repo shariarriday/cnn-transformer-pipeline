@@ -1,49 +1,106 @@
-import torch.nn as nn
+from torch import nn
+import torch.nn.functional as F
 import torch
 
-# Define our network class using nn.Module
-class ResBlockMLP(nn.Module):
-    def __init__(self, input_size, output_size):
-        super(ResBlockMLP, self).__init__()
-        # Define layers for the MLP block
-        self.norm1 = nn.LayerNorm(input_size)
-        self.fc1 = nn.Linear(input_size, input_size//2)
-        self.norm2 = nn.LayerNorm(input_size//2)
-        self.fc2 = nn.Linear(input_size//2, output_size)
-        self.fc3 = nn.Linear(input_size, output_size)
-        self.act = nn.ELU()
-
+# Define a simple 3D convolutional autoencoder for video data
+class Conv3DAutoencoder(nn.Module):
+    def __init__(self, input_channels=3, base_channels=16, latent_dim=512):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.input_channels = input_channels
+        
+        # Encoder: reduce spatial and temporal dimensions
+        # Expected input: (B, 3, 16, 224, 224)
+        self.encoder = nn.Sequential(
+            # First conv layer: (B, 3, 16, 224, 224) -> (B, 16, 16, 112, 112)
+            nn.Conv3d(input_channels, base_channels, kernel_size=(3,3,3), padding=1),
+            nn.BatchNorm3d(base_channels),
+            nn.ReLU(),
+            nn.MaxPool3d((1,2,2)),  # Reduce spatial dimensions
+            
+            # Second conv layer: (B, 16, 16, 112, 112) -> (B, 32, 8, 56, 56)
+            nn.Conv3d(base_channels, base_channels*2, kernel_size=(3,3,3), padding=1),
+            nn.BatchNorm3d(base_channels*2),
+            nn.ReLU(),
+            nn.MaxPool3d((2,2,2)),  # Reduce temporal and spatial dimensions
+            
+            # Third conv layer: (B, 32, 8, 56, 56) -> (B, 64, 4, 28, 28)
+            nn.Conv3d(base_channels*2, base_channels*4, kernel_size=(3,3,3), padding=1),
+            nn.BatchNorm3d(base_channels*4),
+            nn.ReLU(),
+            nn.MaxPool3d((2,2,2)),
+            
+            # Fourth conv layer: (B, 64, 4, 28, 28) -> (B, 128, 2, 14, 14)
+            nn.Conv3d(base_channels*4, base_channels*8, kernel_size=(3,3,3), padding=1),
+            nn.BatchNorm3d(base_channels*8),
+            nn.ReLU(),
+            nn.MaxPool3d((2,2,2)),
+            
+            # Global average pooling: (B, 128, 2, 14, 14) -> (B, 128, 1, 1, 1)
+            nn.AdaptiveAvgPool3d((1, 1, 1)),
+            nn.Flatten(),  # (B, 128)
+            nn.Linear(base_channels*8, latent_dim),  # (B, latent_dim)
+        )
+        
+        # Decoder: reconstruct to original size
+        self.decoder_fc = nn.Linear(latent_dim, base_channels*8 * 2 * 14 * 14)
+        self.decoder = nn.Sequential(
+            # (B, 128, 2, 14, 14) -> (B, 64, 4, 28, 28)
+            nn.ConvTranspose3d(base_channels*8, base_channels*4, kernel_size=(3,3,3), stride=(2,2,2), padding=1, output_padding=1),
+            nn.BatchNorm3d(base_channels*4),
+            nn.ReLU(),
+            
+            # (B, 64, 4, 28, 28) -> (B, 32, 8, 56, 56)
+            nn.ConvTranspose3d(base_channels*4, base_channels*2, kernel_size=(3,3,3), stride=(2,2,2), padding=1, output_padding=1),
+            nn.BatchNorm3d(base_channels*2),
+            nn.ReLU(),
+            
+            # (B, 32, 8, 56, 56) -> (B, 16, 16, 112, 112)
+            nn.ConvTranspose3d(base_channels*2, base_channels, kernel_size=(3,3,3), stride=(2,2,2), padding=1, output_padding=1),
+            nn.BatchNorm3d(base_channels),
+            nn.ReLU(),
+            
+            # (B, 16, 16, 112, 112) -> (B, 3, 16, 224, 224)
+            nn.ConvTranspose3d(base_channels, input_channels, kernel_size=(3,3,3), stride=(1,2,2), padding=1, output_padding=(0,1,1)),
+            nn.Sigmoid(),  # assume input normalized [0,1]
+        )
+    
+    def encode(self, x):
+        """Encode input to latent space"""
+        return self.encoder(x)
+    
+    def decode(self, z, target_shape=None):
+        """Decode latent representation back to original space"""
+        x = self.decoder_fc(z)
+        x = x.view(x.size(0), -1, 2, 14, 14)  # (B, 128, 2, 14, 14)
+        x = self.decoder(x)
+        # If target_shape is provided, upsample to match input
+        if target_shape is not None:
+            # x: (B, 3, 16, 224, 224) or similar
+            x = F.interpolate(x, size=target_shape[2:], mode='trilinear', align_corners=False)
+        return x
+    
     def forward(self, x):
-        # Forward pass through the MLP block
-        x = self.act(self.norm1(x))
-        skip = x  # Skip connection
-        x = self.act(self.norm2(self.fc1(x)))
-        x = self.fc2(x)
-        return x + skip
-
-# Define the LSTM-based network
-class LSTM(nn.Module):
-    def __init__(self, output_size, num_blocks=1, num_layers=64, input_size=99, hidden_size=128):
-        super(LSTM, self).__init__()
-        # Define layers for input MLP, LSTM, residual blocks, and output linear layer
-        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True, dropout=.5, bidirectional=True)
-        blocks = [ResBlockMLP(hidden_size * 2, hidden_size * 2) for _ in range(num_blocks)]
-        self.res_blocks = nn.Sequential(*blocks)
-        self.fc_out = nn.Linear(hidden_size * 2, output_size)
-        self.act = nn.ELU()
-        self.dropout = nn.Dropout(.5)
-        self.num_layers = num_layers
-        self.hidden_size = hidden_size
-        self.input_size = input_size
-
-    def forward(self, input_seq, h0, c0):
-        # Pass the input MLP output through the LSTM block
-        output, (hidden_out, mem_out) = self.lstm(input_seq, (h0, c0))
-       
-        # Pass the LSTM output through residual blocks
-        x = self.act(self.res_blocks(output))
-        x = self.dropout(x)
-        x = self.fc_out(x)
-       
-        # Pass the output of the residual blocks through the final linear layer
-        return x, hidden_out, mem_out
+        """
+        Forward pass
+        
+        Args:
+            x: Input tensor of shape (B, 16, 224, 224, 3) or (B, 3, 16, 224, 224)
+        
+        Returns:
+            Reconstructed tensor of same shape as input
+        """
+        # Handle different input formats
+        if x.dim() == 5:
+            if x.shape[1] == 16:  # (B, 16, 224, 224, 3)
+                x = x.permute(0, 4, 1, 2, 3)  # -> (B, 3, 16, 224, 224)
+            # If already (B, 3, 16, 224, 224), use as is
+        
+        original_shape = x.shape
+        z = self.encode(x)
+        # Pass target_shape to decoder for upsampling
+        reconstruction = self.decode(z, target_shape=original_shape)
+        
+        # Ensure output matches input format
+        reconstruction = reconstruction.permute(0, 2, 3, 4, 1)  # -> (B, 16, 224, 224, 3)
+        return reconstruction
