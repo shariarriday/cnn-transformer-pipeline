@@ -30,7 +30,7 @@ class LSTM(nn.Module):
         blocks = [ResBlockMLP(hidden_size * 2, hidden_size * 2) for _ in range(num_blocks)]
         self.res_blocks = nn.Sequential(*blocks)
         self.fc_out = nn.Linear(hidden_size * 2, output_size)
-        self.act = nn.ELU()
+        self.act = nn.Tanh()
         self.dropout = nn.Dropout(.5)
         self.num_layers = num_layers
         self.hidden_size = hidden_size
@@ -39,11 +39,12 @@ class LSTM(nn.Module):
     def forward(self, input_seq, h0, c0):
         # Pass the input MLP output through the LSTM block
         output, (hidden_out, mem_out) = self.lstm(input_seq, (h0, c0))
-       
         # Pass the LSTM output through residual blocks
-        x = self.act(self.res_blocks(output))
-        x = self.dropout(x)
-        x = self.fc_out(x)
-       
+        # x = self.act(self.res_blocks(output))
+        x = self.fc_out(output[:, -1, :])
+        # x = self.dropout(x)
         # Pass the output of the residual blocks through the final linear layer
+        if (torch.any(torch.isnan(input_seq))):
+            print("NaN values found in inputs to LSTM forward pass", input_seq)
+
         return x, hidden_out, mem_out

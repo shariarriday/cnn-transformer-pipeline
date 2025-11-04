@@ -1,13 +1,10 @@
 import torch
-from sklearn.metrics import (classification_report)
-from torch.optim.swa_utils import AveragedModel, update_bn
-import pandas as pd
 from tqdm import tqdm
-import json
+import torch.nn as nn
 
 from .metrics import AdvancedMetricsTracker
 
-def test_model(model, test_loader, device, num_classes, label_maps, num_layers=2, hidden_dim=1024):
+def test_model(model, test_loader, device, num_layers=2, hidden_dim=1024):
    
     # Load best model
     checkpoint = torch.load('checkpoints/best_model.pth', weights_only=False)
@@ -15,61 +12,29 @@ def test_model(model, test_loader, device, num_classes, label_maps, num_layers=2
     model = model.to(device)
     model.eval()
 
-    # Initialize metrics tracker
-    classes = []
-    for i in range(num_classes):
-        for item in label_maps.items():
-            if item[1] == i:
-                classes.append(item[0])
-
-    metrics = AdvancedMetricsTracker(num_classes=num_classes, classes=classes)
-
-    # Test loop
-    correct = 0
-    total = 0
+    test_loss = 0.0
+    avg_loss = 0.0
+    losses = []
+    criterion = nn.L1Loss()
 
     with torch.no_grad():
-        for videos, labels in tqdm(test_loader, desc="Testing"):
+        for videos in tqdm(test_loader):
+            test_loss = 0.0
             videos = videos.to(device)
-            labels = labels.to(device)
+
+            h = torch.zeros(num_layers, videos.shape[0], hidden_dim).to(device)
+            c = torch.zeros(num_layers, videos.shape[0], hidden_dim).to(device)
+
+            for frame_until in range(15, videos.shape[1]):
+                outputs, h, c = model(videos[:, :frame_until, :], h, c)
+                loss = criterion(outputs, videos[:, frame_until, :])
+                test_loss += loss.item()
             
-            h = torch.zeros(num_layers, labels.shape[0], hidden_dim).to(device)
-            c = torch.zeros(num_layers, labels.shape[0], hidden_dim).to(device)
+            losses.append(test_loss)
 
-            outputs, hn, cn = model(videos, h, c)
-            # Use the last output for classification
-            probabilities = torch.softmax(outputs[:, -1, :], dim=1)
-            _, predicted = outputs[:, -1, :].max(1)
-
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
-
-            # Update metrics
-            metrics.update_predictions(predicted, labels, probabilities)
+    avg_loss = sum(losses) / len(losses)
 
     # Calculate and display results
-    test_accuracy = 100. * correct / total
-    print(f'\nTest Accuracy: {test_accuracy:.2f}%')
+    print(f'\nTest Loss: {avg_loss:.6f}')
 
-    # Generate and save metrics plots
-    metrics.plot_confusion_matrix(save_path='metrics/test_confusion_matrix.png')
-    metrics.plot_roc_curves(save_path='metrics/test_roc_curves.png')
-    metrics.plot_precision_recall_curves(save_path='metrics/test_pr_curves.png')
-
-    # Generate classification report
-    report = classification_report(
-        metrics.metrics['epoch_labels'],
-        metrics.metrics['epoch_predictions'],
-        labels=list(range(num_classes)),
-        target_names=metrics.classes,
-        output_dict=True
-    )
-
-    # Save and display report
-    with open('metrics/test_classification_report.json', 'w') as f:
-        json.dump(report, f, indent=4)
-
-    print('\nClassification Report:')
-    print(pd.DataFrame(report).transpose())
-
-    return test_accuracy, report
+    return avg_loss
