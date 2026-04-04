@@ -7,12 +7,14 @@ import json
 
 from .metrics import AdvancedMetricsTracker
 
-def test_model(model, test_loader, device, num_classes, label_maps, num_layers=2, hidden_dim=1024):
-   
+
+def test_model(model, path, test_loader, device, num_classes, label_maps, num_layers=2, hidden_dim=1024):
+
     # Load best model
-    checkpoint = torch.load('checkpoints/best_model.pth', weights_only=False)
+    checkpoint = torch.load(path, weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
     model = model.to(device)
+    model = model.to(torch.float32)
     model.eval()
 
     # Initialize metrics tracker
@@ -32,14 +34,12 @@ def test_model(model, test_loader, device, num_classes, label_maps, num_layers=2
         for videos, labels in tqdm(test_loader, desc="Testing"):
             videos = videos.to(device)
             labels = labels.to(device)
-            
-            h = torch.zeros(num_layers, labels.shape[0], hidden_dim).to(device)
-            c = torch.zeros(num_layers, labels.shape[0], hidden_dim).to(device)
 
-            outputs, hn, cn = model(videos, h, c)
+            outputs = model(videos)
+
             # Use the last output for classification
-            probabilities = torch.softmax(outputs[:, -1, :], dim=1)
-            _, predicted = outputs[:, -1, :].max(1)
+            probabilities = torch.softmax(outputs, dim=1)
+            _, predicted = outputs.max(1)
 
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()
@@ -52,9 +52,11 @@ def test_model(model, test_loader, device, num_classes, label_maps, num_layers=2
     print(f'\nTest Accuracy: {test_accuracy:.2f}%')
 
     # Generate and save metrics plots
-    metrics.plot_confusion_matrix(save_path='metrics/test_confusion_matrix.png')
+    metrics.plot_confusion_matrix(
+        save_path='metrics/test_confusion_matrix.png')
     metrics.plot_roc_curves(save_path='metrics/test_roc_curves.png')
-    metrics.plot_precision_recall_curves(save_path='metrics/test_pr_curves.png')
+    metrics.plot_precision_recall_curves(
+        save_path='metrics/test_pr_curves.png')
 
     # Generate classification report
     report = classification_report(

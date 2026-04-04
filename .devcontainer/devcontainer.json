@@ -1,0 +1,14 @@
+{
+  "name": "CUDA with Python",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "runArgs": [
+    "--gpus=all"
+  ],
+  "mounts": [
+    "source=D:/Dataset,target=/workspaces/cnn-transformer-pipeline/dataset,type=bind"
+  ],
+  "hostRequirements": {
+    "gpu": true
+  },
+  "onCreateCommand": "pip install torch torchvision && pip install mediapipe pandas seaborn opencv-python numpy matplotlib scipy scikit-learn tqdm"
+}

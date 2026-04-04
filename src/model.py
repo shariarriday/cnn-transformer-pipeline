@@ -23,14 +23,14 @@ class ResBlockMLP(nn.Module):
 
 # Define the LSTM-based network
 class LSTM(nn.Module):
-    def __init__(self, output_size, num_blocks=1, num_layers=64, input_size=99, hidden_size=128):
+    def __init__(self, output_size, num_blocks=1, num_layers=64, input_size=34, hidden_size=128):
         super(LSTM, self).__init__()
         # Define layers for input MLP, LSTM, residual blocks, and output linear layer
         self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True, dropout=.5, bidirectional=True)
         blocks = [ResBlockMLP(hidden_size * 2, hidden_size * 2) for _ in range(num_blocks)]
         self.res_blocks = nn.Sequential(*blocks)
         self.fc_out = nn.Linear(hidden_size * 2, output_size)
-        self.act = nn.ELU()
+        self.act = nn.Tanh()
         self.dropout = nn.Dropout(.5)
         self.num_layers = num_layers
         self.hidden_size = hidden_size
@@ -39,11 +39,13 @@ class LSTM(nn.Module):
     def forward(self, input_seq, h0, c0):
         # Pass the input MLP output through the LSTM block
         output, (hidden_out, mem_out) = self.lstm(input_seq, (h0, c0))
-       
         # Pass the LSTM output through residual blocks
-        x = self.act(self.res_blocks(output))
+        # x = self.act(self.res_blocks(output))
+        x = self.fc_out(output[:, -1, :])
         x = self.dropout(x)
-        x = self.fc_out(x)
-       
+        x = self.act(x)
         # Pass the output of the residual blocks through the final linear layer
+        if (torch.any(torch.isnan(input_seq))):
+            print("NaN values found in inputs to LSTM forward pass", input_seq)
+
         return x, hidden_out, mem_out
