@@ -164,3 +164,7 @@ checkpoints*/
 metrics*/
 
 dataset/*
+train/*
+test/*
+val/*
+*classification*/*
