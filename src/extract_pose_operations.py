@@ -1,11 +1,11 @@
+#!/usr/bin/env python3
+
 import os
 import sys
 import cv2
 import numpy as np
 import mediapipe as mp
 from scipy.signal import savgol_filter
-
-#!/usr/bin/env python3
 
 NUM_LANDMARKS = 33  # MediaPipe Pose has 33 landmarks
 
@@ -19,7 +19,8 @@ def process_video(video_path, min_detection_confidence=0.75, min_tracking_confid
     if not cap.isOpened():
         raise RuntimeError(f"Unable to open video: {video_path}")
 
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if cap.get(cv2.CAP_PROP_FRAME_COUNT) > 0 else None
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if cap.get(
+        cv2.CAP_PROP_FRAME_COUNT) > 0 else None
 
     poses = []  # list of (NUM_LANDMARKS,4)
     frame_idx = 0
@@ -56,7 +57,8 @@ def process_video(video_path, min_detection_confidence=0.75, min_tracking_confid
             # optional simple progress indicator
             if total_frames:
                 if frame_idx % 50 == 0 or frame_idx == total_frames:
-                    print(f"Processed {frame_idx}/{total_frames} frames", file=sys.stderr)
+                    print(
+                        f"Processed {frame_idx}/{total_frames} frames", file=sys.stderr)
             else:
                 if frame_idx % 200 == 0:
                     print(f"Processed {frame_idx} frames...", file=sys.stderr)
@@ -66,8 +68,10 @@ def process_video(video_path, min_detection_confidence=0.75, min_tracking_confid
     if len(poses) == 0:
         raise RuntimeError("No frames processed from the video.")
 
-    poses_arr = np.stack(poses, axis=0)  # shape: (num_frames, NUM_LANDMARKS, 4)
+    # shape: (num_frames, NUM_LANDMARKS, 4)
+    poses_arr = np.stack(poses, axis=0)
     return poses_arr
+
 
 def normalize_pose_sequence(pose_sequence, smoothing_window=5, polyorder=2):
     """
@@ -94,7 +98,8 @@ def normalize_pose_sequence(pose_sequence, smoothing_window=5, polyorder=2):
     LEFT_SHOULDER, RIGHT_SHOULDER = 11, 12
 
     # === Step 2: Normalize Orientation (make front-facing) ===
-    avg_frame = np.mean(poses[0:5], axis=0)  # average first 5 frames to reduce noise
+    # average first 5 frames to reduce noise
+    avg_frame = np.mean(poses[0:5], axis=0)
     left_shoulder = avg_frame[LEFT_SHOULDER]
     right_shoulder = avg_frame[RIGHT_SHOULDER]
     shoulder_vec = right_shoulder - left_shoulder
@@ -127,6 +132,8 @@ def normalize_pose_sequence(pose_sequence, smoothing_window=5, polyorder=2):
                 )
 
     for k in range(poses.shape[0]):
+        # Debug: print each frame's landmarks after processing
+        print(f"Frame {k}: {poses[k]}")
         poses[k] = poses[k] - poses[0]
 
     return poses

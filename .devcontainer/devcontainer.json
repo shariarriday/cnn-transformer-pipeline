@@ -10,5 +10,5 @@
   "hostRequirements": {
     "gpu": true
   },
-  "onCreateCommand": "pip install torch torchvision && pip install mediapipe pandas seaborn opencv-python numpy matplotlib scipy scikit-learn tqdm"
+  "onCreateCommand": "pip install torch torchvision && pip install mediapipe pandas seaborn opencv-python-headless numpy matplotlib scipy scikit-learn tqdm"
 }

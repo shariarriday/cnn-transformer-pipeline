@@ -13,6 +13,7 @@ This project trains and evaluates an exercise-classification model from pose lan
 │   ├── training.py         # Training + dataloader utilities
 │   ├── testing.py          # Evaluation utilities
 │   ├── metrics.py          # Metrics helpers
+│   ├── inference.py        # Single-video inference script
 │   └── model.py
 ├── checkpoints/            # Saved models and label maps
 ├── dataset/                # Training/test data
@@ -95,10 +96,38 @@ python -m src --num_workers 4 --batch_size 1 --epochs 200 --path "dataset/landma
 python -m src --path "dataset/landmark_poses_correct" --test_path "dataset/landmark_poses_wrong" --num_layers 2 --hidden_dim 256 --checkpoint_path classification
 ```
 
+## Inference
+
+Run single-video inference with `src/inference.py` after training a model.
+
+### Command-Line Arguments
+
+- `--weight_path` (required): Path to the saved model checkpoint (e.g. `best_model.pth`).
+- `--label_path` (required): Path to `label_maps.json` produced during training.
+- `--video_path` (required): Path to the input video file.
+- `--output_path` (required): Path where the prediction JSON will be written.
+
+### Example
+
+```bash
+python src/inference.py \
+  --weight_path classification/2-256/best_model.pth \
+  --label_path classification/2-256/label_maps.json \
+  --video_path dataset/sample_video.mp4 \
+  --output_path output/prediction.json
+```
+
+The output file contains the predicted exercise class:
+
+```json
+{"predicted_class": "bicycle-crunch"}
+```
+
 ## Notes
 
 - Checkpoints and label maps are stored under: `<checkpoint_path>/<num_layers>-<hidden_dim>/`
 - Testing expects `label_maps.json` and `best_model.pth` to exist in that folder.
+- Inference uses `extract_pose_operations` (an external dependency) to extract and normalize pose landmarks from the video.
 
 ## License
 

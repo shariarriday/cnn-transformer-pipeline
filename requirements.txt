@@ -1,5 +1,7 @@
 torch
 numpy
 Pillow
-opencv-python
+pandas
+tqdm
+opencv-python-headless
 scikit-image
