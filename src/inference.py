@@ -11,7 +11,8 @@ from graph_model import ExercisePredictor
 def inference(model, weight_path, json_path, data, device, label_maps):
 
     # Load best model
-    checkpoint = torch.load(weight_path, weights_only=False)
+    checkpoint = torch.load(
+        weight_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
     model = model.to(device)
     model.eval()
@@ -84,9 +85,9 @@ def main():
     model = ExercisePredictor(output_size=len(label_maps.keys()),
                               input_dim=3,
                               num_nodes=33,
-                              embedding_dim=128,
-                              lstm_hidden=128,
-                              num_layers=2)
+                              embedding_dim=64,
+                              lstm_hidden=64,
+                              num_layers=1)
 
     inference(
         model=model,
