@@ -94,14 +94,14 @@ def train_video_classifier(
         start_epoch = checkpoint['epoch'] + 1
 
     # Initialize optimizers and schedulers
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5)
 
     # Main scheduler
     main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, num_epochs
     )
 
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.25)
     early_stopping = EarlyStopping(patience=patience, min_delta=min_delta)
 
     # Initialize metrics tracker
