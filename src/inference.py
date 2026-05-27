@@ -5,7 +5,7 @@ import warnings
 import numpy as np
 
 import extract_pose_operations
-from graph_model import ExercisePredictor
+from graph_model import LandmarkPredictor
 
 
 def inference(model, weight_path, json_path, data, device, label_maps):
@@ -73,6 +73,8 @@ def main():
                         help='Path to the output json files')
     parser.add_argument('--video_path', type=str, required=True,
                         help='Path to the video file')
+    parser.add_argument('--class', type=str, required=True,
+                        help='The class to predict')
 
     args = parser.parse_args()
 
@@ -82,12 +84,9 @@ def main():
         label_maps = json.load(f)
 
     # Create and train model
-    model = ExercisePredictor(output_size=len(label_maps.keys()),
-                              input_dim=3,
-                              num_nodes=33,
-                              embedding_dim=64,
-                              lstm_hidden=64,
-                              num_layers=1)
+    model = LandmarkPredictor(embedding_dim=int(args.hidden_dim),
+                              lstm_hidden=int(args.hidden_dim),
+                              num_layers=int(args.num_layers))
 
     inference(
         model=model,

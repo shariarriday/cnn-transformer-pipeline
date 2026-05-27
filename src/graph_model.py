@@ -63,7 +63,7 @@ class GraphSpatialEncoder(nn.Module):
         self.projection = nn.Linear(num_nodes * 64, hidden_dim)
 
         self.dropout = nn.Dropout(0.5)
-        self.relu = nn.ReLU()
+        self.relu = nn.Tanh()
 
     def forward(self, x):
         """
@@ -101,9 +101,9 @@ class GraphSpatialEncoder(nn.Module):
         return x.view(batch, seq_len, -1)
 
 
-class ExercisePredictor(nn.Module):
-    def __init__(self, output_size, num_nodes=33, input_dim=3, num_layers=1, embedding_dim=128, lstm_hidden=256):
-        super(ExercisePredictor, self).__init__()
+class LandmarkPredictor(nn.Module):
+    def __init__(self, num_nodes=33, input_dim=3, num_layers=1, embedding_dim=128, lstm_hidden=256):
+        super(LandmarkPredictor, self).__init__()
 
         # 1. Spatial Encoder (The Graph Part)
         self.spatial_encoder = GraphSpatialEncoder(
@@ -126,6 +126,8 @@ class ExercisePredictor(nn.Module):
         # Projects LSTM output back to 33 landmarks
         self.head = nn.Linear(lstm_hidden, num_nodes * input_dim)
 
+        self.act = nn.Tanh()
+
     def forward(self, x):
         """
         x: (Batch, Time, 33, 3)
@@ -140,5 +142,7 @@ class ExercisePredictor(nn.Module):
         lstm_out, (h_n, c_n) = self.lstm(spatial_features)
 
         predictions = self.head(lstm_out[:, -1, :])
+
+        predictions = self.act(predictions)
 
         return predictions

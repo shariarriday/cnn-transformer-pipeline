@@ -6,30 +6,24 @@ import numpy as np
 
 
 class PoseDataset(Dataset):
-    def __init__(self, path, transform=None, label_maps=None):
+    def __init__(self, path, class_name, transform=None, label_maps=None):
         self.path = path
         self.transform = transform
         self.samples = []
+        self.class_name = class_name
         self.class_names = set()
 
-        if label_maps is not None:
-            self._set_label_map(label_maps)
-        else:
-            # Scan all json files and build index
-            for fname in os.listdir(self.path):
-                if fname.endswith('.json'):
-                    self.class_names.add(fname.split('__')[0])
-                    self.samples.append(
-                        (os.path.join(self.path, fname), fname.split('__')[0]))
-            self.class_names = sorted(list(self.class_names))
-            self.class_to_idx = {c: i for i, c in enumerate(self.class_names)}
-        print(self.class_to_idx)
+        # Scan all json files and build index
+        for fname in os.listdir(self.path):
+            if fname.endswith('.json'):
+                if class_name == fname.split('__')[0]:
+                    self.samples.append(os.path.join(self.path, fname))
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        json_path, class_name = self.samples[idx]
+        json_path = self.samples[idx]
         with open(json_path, 'r') as f:
             pose_sequence = json.load(f)
         pose_data = []
@@ -50,15 +44,17 @@ class PoseDataset(Dataset):
         # Reshape back to (num_frames, num_keypoints, 3)
         arr = arr.reshape(arr.shape[0], 33, 3)
 
-        label = self.class_to_idx[class_name]
         ret = torch.from_numpy(arr).nan_to_num_(nan=0.0).float()
         if torch.isnan(ret).any() or torch.isinf(ret).any():
             print(
                 f"Warning: NaN or Inf detected in logits for sample {idx} ({json_path})")
-        return ret, label
+        return ret
 
     def _get_label_map(self):
         return self.class_to_idx
 
     def _set_label_map(self, label_map):
         self.class_to_idx = label_map
+
+    def _set_class_name(self, class_name):
+        self.class_name = class_name

@@ -1,11 +1,11 @@
-#!/usr/bin/env python3
-
 import os
 import sys
 import cv2
 import numpy as np
 import mediapipe as mp
 from scipy.signal import savgol_filter
+
+#!/usr/bin/env python3
 
 NUM_LANDMARKS = 33  # MediaPipe Pose has 33 landmarks
 
@@ -22,6 +22,15 @@ def process_video(video_path, min_detection_confidence=0.75, min_tracking_confid
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if cap.get(
         cv2.CAP_PROP_FRAME_COUNT) > 0 else None
 
+    # Write a code to rotate video by 90 degrees clockwise if width > height
+    video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    video_angle = int(cap.get(cv2.CAP_PROP_ORIENTATION_META)) if cap.get(
+        cv2.CAP_PROP_ORIENTATION_META) > 0 else None
+
+    print(
+        f"Video opened: {video_path} (width={video_width}, height={video_height}, total_frames={total_frames}), angle={video_angle})")
+
     poses = []  # list of (NUM_LANDMARKS,4)
     frame_idx = 0
 
@@ -37,6 +46,9 @@ def process_video(video_path, min_detection_confidence=0.75, min_tracking_confid
                 break
 
             # Convert BGR->RGB
+            if video_angle == 90 or (video_width < video_height and video_angle is None):
+                frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+
             image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
             results = pose.process(image_rgb)
@@ -93,25 +105,21 @@ def normalize_pose_sequence(pose_sequence, smoothing_window=5, polyorder=2):
     poses = pose_sequence.copy()
     n_frames, n_landmarks, _ = poses.shape
 
-    # === Step 1: Center to (0, 0) ===
-    LEFT_HIP, RIGHT_HIP = 23, 24
-    LEFT_SHOULDER, RIGHT_SHOULDER = 11, 12
-
     # === Step 2: Normalize Orientation (make front-facing) ===
-    # average first 5 frames to reduce noise
-    avg_frame = np.mean(poses[0:5], axis=0)
-    left_shoulder = avg_frame[LEFT_SHOULDER]
-    right_shoulder = avg_frame[RIGHT_SHOULDER]
-    shoulder_vec = right_shoulder - left_shoulder
-    angle = np.arcsin(shoulder_vec[2] / np.linalg.norm(shoulder_vec))
-    rotation_matrix = np.array([
-        [1, 0, 0],
-        [0, np.cos(-angle), -np.sin(-angle)],
-        [0, np.sin(-angle),  np.cos(-angle)]
-    ])
-    for f in range(n_frames):
-        frame = poses[f]
-        poses[f] = frame @ rotation_matrix
+    # avg_frame = np.mean(poses[0:5], axis=0)  # average first 5 frames to reduce noise
+    # left_hip = avg_frame[LEFT_HIP]
+    # right_hip = avg_frame[RIGHT_HIP]
+    # hip_vec = right_hip - left_hip
+    # angle = np.arcsin(hip_vec[2] / np.linalg.norm(hip_vec))
+    # print(f"Rotating pose by {-np.degrees(angle):.2f} degrees to make it front-facing")
+    # rotation_matrix = np.array([
+    #     [1, 0, 0],
+    #     [0, np.cos(-angle), -np.sin(-angle)],
+    #     [0, np.sin(-angle),  np.cos(-angle)]
+    # ])
+    # for f in range(n_frames):
+    #     frame = poses[f]
+    #     poses[f] = frame @ rotation_matrix
 
     # === Step 5: Temporal smoothing ===
     # Apply smoothing on each landmark dimension over time
@@ -132,8 +140,6 @@ def normalize_pose_sequence(pose_sequence, smoothing_window=5, polyorder=2):
                 )
 
     for k in range(poses.shape[0]):
-        # Debug: print each frame's landmarks after processing
-        print(f"Frame {k}: {poses[k]}")
         poses[k] = poses[k] - poses[0]
 
     return poses

@@ -1,10 +1,17 @@
+import json
 import argparse
 import warnings
 import torch
 
-from .graph_model import ExercisePredictor
+from .graph_model import LandmarkPredictor
 from .testing import test_model
 from .training import create_dataloaders, create_test_dataloaders, train_video_classifier
+
+class_names = {'bicycle-crunch': 0,
+               'chair-squats': 1,
+               'clap-patterns': 2,
+               'exaggerated-side-steps': 3,
+               }
 
 
 def main():
@@ -45,87 +52,79 @@ def main():
         os.makedirs(folder_name)
 
     if args.test_path != 'default':
-        # Load label maps from the training phase
-        import json
-        with open(folder_name + 'label_maps.json', 'r') as f:
-            label_maps = json.load(f)
 
-        test_loader = create_test_dataloaders(
-            path=args.test_path,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            label_maps=label_maps
-        )
+        for class_name in class_names.keys():
+            # Load label maps from the training phase
+            test_loader = create_test_dataloaders(
+                path=args.test_path,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers,
+                class_name=class_name
+            )
 
-        # Create and train model
-        model = ExercisePredictor(output_size=len(label_maps.keys()),
-                                  input_dim=3,
-                                  num_nodes=33,
-                                  embedding_dim=int(args.hidden_dim),
-                                  lstm_hidden=int(args.hidden_dim),
-                                  num_layers=int(args.num_layers))
+            # Create and train model
+            model = LandmarkPredictor(embedding_dim=int(args.hidden_dim),
+                                      lstm_hidden=int(args.hidden_dim),
+                                      num_layers=int(args.num_layers))
 
-        test_accuracy, report = test_model(
-            model,
-            f"{folder_name}best_model.pth",
-            test_loader,
-            device,
-            len(label_maps.keys()),
-            label_maps,
-            hidden_dim=int(args.hidden_dim),
-        )
+            test_loss = test_model(
+                model,
+                f"{folder_name}{class_name}/best_model.pth",
+                test_loader,
+                device,
+                hidden_dim=int(args.hidden_dim),
+            )
 
-        print(f'Test Accuracy: {test_accuracy:.2f}%')
-        print(report)
+            import json
+
+            with open(f'{folder_name}/{class_name}_loss_stats.json', 'w') as f:
+                json.dump(test_loss, f, indent=4)
+
+            print(f'Test Loss: {test_loss["average"]:.6f}')
 
         return
 
-    train_loader, val_loader, test_loader, label_maps = create_dataloaders(
-        path=args.path,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers
-    )
+    for class_name in class_names.keys():
 
-    # save label maps for later use in testing as a json file
-    import json
-    with open(folder_name + 'label_maps.json', 'w') as f:
-        json.dump(label_maps, f)
+        train_loader, val_loader, test_loader = create_dataloaders(
+            class_name=class_name,
+            path=args.path,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers
+        )
 
-    # Create and train model
-    model = ExercisePredictor(output_size=len(label_maps.keys()),
-                              input_dim=3,
-                              num_nodes=33,
-                              embedding_dim=int(args.hidden_dim),
-                              lstm_hidden=int(args.hidden_dim),
-                              num_layers=int(args.num_layers))
+        # Create and train model
+        model = LandmarkPredictor(embedding_dim=int(args.hidden_dim),
+                                  lstm_hidden=int(args.hidden_dim),
+                                  num_layers=int(args.num_layers))
 
-    train_video_classifier(
-        model=model,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        num_classes=len(label_maps.keys()),
-        num_epochs=args.epochs,
-        device='cuda' if torch.cuda.is_available() else 'cpu',
-        checkpoint_dir=folder_name,
-        metrics_dir=folder_name + "metrics/",
-        label_maps=label_maps,
-        patience=25
-    )
+        train_video_classifier(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            num_epochs=args.epochs,
+            device='cuda' if torch.cuda.is_available() else 'cpu',
+            checkpoint_dir=f'{folder_name}{class_name}',
+            metrics_dir=f'{folder_name}{class_name}/metrics',
+            patience=15
+        )
 
-    # Test the model
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    test_accuracy, report = test_model(
-        model,
-        f"{folder_name}/best_model.pth",
-        test_loader,
-        device,
-        len(label_maps.keys()),
-        label_maps,
-        hidden_dim=int(args.hidden_dim),
-    )
+        # Test the model
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        val_loss_stats = test_model(
+            model,
+            f'{folder_name}{class_name}/best_model.pth',
+            test_loader,
+            device,
+            hidden_dim=int(args.hidden_dim),
+        )
 
-    print(f'Test Accuracy: {test_accuracy:.6f}%')
-    print(report)
+        print(f'Test loss: {val_loss_stats["average"]:.6f}')
+
+        import json
+
+        with open(f'{folder_name}/{class_name}_val_loss_stats.json', 'w') as f:
+            json.dump(val_loss_stats, f, indent=4)
 
 
 if __name__ == '__main__':

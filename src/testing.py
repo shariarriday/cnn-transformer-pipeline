@@ -1,14 +1,13 @@
 import torch
 from sklearn.metrics import (classification_report)
-from torch.optim.swa_utils import AveragedModel, update_bn
-import pandas as pd
+from torch import nn
 from tqdm import tqdm
-import json
+import numpy as np
 
 from .metrics import AdvancedMetricsTracker
 
 
-def test_model(model, path, test_loader, device, num_classes, label_maps, num_layers=2, hidden_dim=1024):
+def test_model(model, path, test_loader, device, num_layers=2, hidden_dim=1024):
 
     # Load best model
     checkpoint = torch.load(path, weights_only=False)
@@ -17,61 +16,36 @@ def test_model(model, path, test_loader, device, num_classes, label_maps, num_la
     model = model.to(torch.float32)
     model.eval()
 
-    # Initialize metrics tracker
-    classes = []
-    for i in range(num_classes):
-        for item in label_maps.items():
-            if item[1] == i:
-                classes.append(item[0])
-
-    metrics = AdvancedMetricsTracker(num_classes=num_classes, classes=classes)
+    criterion = nn.MSELoss()
 
     # Test loop
-    correct = 0
-    total = 0
+    val_losses = []
 
     with torch.no_grad():
-        for videos, labels in tqdm(test_loader, desc="Testing"):
+        for videos in tqdm(test_loader):
             videos = videos.to(device)
-            labels = labels.to(device)
 
-            outputs = model(videos)
+            for frame_until in range(15, videos.shape[1]):
+                h = torch.zeros(
+                    num_layers, videos.shape[0], hidden_dim).to(device)
+                c = torch.zeros(
+                    num_layers, videos.shape[0], hidden_dim).to(device)
 
-            # Use the last output for classification
-            probabilities = torch.softmax(outputs, dim=1)
-            _, predicted = outputs.max(1)
+                outputs = model(videos[:, :frame_until, :, :])
+                loss = criterion(
+                    outputs, videos[:, frame_until, :, :].reshape(1, 99))
+                val_losses.append(loss.item())
 
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
+    # Calculate average, median, and std of validation losses
+    avg_val_loss = np.mean(val_losses)
+    median_val_loss = np.median(val_losses)
+    std_val_loss = np.std(val_losses)
 
-            # Update metrics
-            metrics.update_predictions(predicted, labels, probabilities)
+    # Save validation loss statistics to a JSON file
+    val_loss_stats = {
+        'average': avg_val_loss,
+        'median': median_val_loss,
+        'std_dev': std_val_loss
+    }
 
-    # Calculate and display results
-    test_accuracy = 100. * correct / total
-    print(f'\nTest Accuracy: {test_accuracy:.2f}%')
-
-    # Generate and save metrics plots
-    metrics.plot_confusion_matrix(
-        save_path='metrics/test_confusion_matrix.png')
-    metrics.plot_roc_curves(save_path='metrics/test_roc_curves.png')
-    metrics.plot_precision_recall_curves(
-        save_path='metrics/test_pr_curves.png')
-
-    # Generate classification report
-    report = classification_report(
-        metrics.metrics['epoch_labels'],
-        metrics.metrics['epoch_predictions'],
-        labels=list(range(num_classes)),
-        target_names=metrics.classes,
-        output_dict=True
-    )
-
-    # Save and display report
-    with open('metrics/test_classification_report.json', 'w') as f:
-        json.dump(report, f, indent=4)
-
-    print('\nClassification Report:')
-    print(pd.DataFrame(report).transpose())
-
-    return test_accuracy, report
+    return val_loss_stats
