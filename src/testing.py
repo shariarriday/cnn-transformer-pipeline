@@ -16,7 +16,7 @@ def test_model(model, path, test_loader, device, num_layers=2, hidden_dim=1024):
     model = model.to(torch.float32)
     model.eval()
 
-    criterion = nn.MSELoss()
+    criterion = nn.L1Loss()
 
     # Test loop
     val_losses = []
@@ -33,7 +33,7 @@ def test_model(model, path, test_loader, device, num_layers=2, hidden_dim=1024):
 
                 outputs = model(videos[:, :frame_until, :, :])
                 loss = criterion(
-                    outputs, videos[:, frame_until, :, :].reshape(1, 99))
+                    outputs, videos[:, frame_until, :, :].reshape(videos[:, :frame_until, :, :].shape[0], 99))
                 val_losses.append(loss.item())
 
     # Calculate average, median, and std of validation losses

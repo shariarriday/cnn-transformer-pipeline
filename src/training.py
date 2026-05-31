@@ -92,7 +92,7 @@ def train_video_classifier(
         start_epoch = checkpoint['epoch'] + 1
 
     # Initialize optimizers and schedulers
-    optimizer = torch.optim.AdamW(model.parameters(), lr=5e-7)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-6)
 
     # Gradient scaler for mixed precision
     scaler = GradScaler(device)
@@ -104,7 +104,7 @@ def train_video_classifier(
         optimizer, num_epochs
     )
 
-    criterion = nn.MSELoss()
+    criterion = nn.L1Loss()
     early_stopping = EarlyStopping(patience=patience, min_delta=min_delta)
 
     metrics = AdvancedMetricsTracker()
@@ -125,16 +125,17 @@ def train_video_classifier(
             start = np.random.randint(15, videos.shape[1] - 1)
             skip = np.random.randint(2, 5)
 
-            optimizer.zero_grad()
+            for frame_until in range(start, videos.shape[1]):
+                optimizer.zero_grad()
 
-            for frame_until in range(start, videos.shape[1], skip):
                 h = torch.zeros(
                     num_layers, videos.shape[0], hidden_dim).to(device)
                 c = torch.zeros(
                     num_layers, videos.shape[0], hidden_dim).to(device)
+                batch = videos[:, :frame_until, :, :].shape[0]
                 outputs = model(videos[:, :frame_until, :, :])
                 loss = criterion(
-                    outputs, videos[:, frame_until, :, :].reshape(1, 99))
+                    outputs, videos[:, frame_until, :, :].reshape(batch, 99))
 
                 train_loss += loss.item()
 
@@ -156,15 +157,16 @@ def train_video_classifier(
                 start = np.random.randint(15, videos.shape[1] - 1)
                 skip = np.random.randint(2, 5)
 
-                for frame_until in range(start, videos.shape[1], skip):
+                for frame_until in range(start, videos.shape[1]):
                     h = torch.zeros(
                         num_layers, videos.shape[0], hidden_dim).to(device)
                     c = torch.zeros(
                         num_layers, videos.shape[0], hidden_dim).to(device)
 
+                    batch = videos[:, :frame_until, :, :].shape[0]
                     outputs = model(videos[:, :frame_until, :, :])
                     loss = criterion(
-                        outputs, videos[:, frame_until, :, :].reshape(1, 99))
+                        outputs, videos[:, frame_until, :, :].reshape(batch, 99))
                     val_loss += loss.item()
 
         avg_val_loss = val_loss / len(val_loader)
@@ -214,21 +216,27 @@ def create_dataloaders(*args, **kwargs):
         train_ds,
         batch_size=kwargs.get('batch_size', 4),
         shuffle=True,
-        num_workers=kwargs.get('num_workers', 4)
+        num_workers=kwargs.get('num_workers', 4),
+        collate_fn=lambda x: torch.nn.utils.rnn.pad_sequence(
+            x, batch_first=True)
     )
 
     val_loader = DataLoader(
         valid_ds,
         batch_size=kwargs.get('batch_size', 4),
         shuffle=False,
-        num_workers=kwargs.get('num_workers', 4)
+        num_workers=kwargs.get('num_workers', 4),
+        collate_fn=lambda x: torch.nn.utils.rnn.pad_sequence(
+            x, batch_first=True)
     )
 
     test_loader = DataLoader(
         test_ds,
         batch_size=kwargs.get('batch_size', 4),
         shuffle=False,
-        num_workers=kwargs.get('num_workers', 4)
+        num_workers=kwargs.get('num_workers', 4),
+        collate_fn=lambda x: torch.nn.utils.rnn.pad_sequence(
+            x, batch_first=True)
     )
 
     return train_loader, val_loader, test_loader
@@ -242,7 +250,9 @@ def create_test_dataloaders(*args, **kwargs):
         pose_dataset,
         batch_size=kwargs.get('batch_size', 4),
         shuffle=False,
-        num_workers=kwargs.get('num_workers', 4)
+        num_workers=kwargs.get('num_workers', 4),
+        collate_fn=lambda x: torch.nn.utils.rnn.pad_sequence(
+            x, batch_first=True)
     )
 
     return test_loader

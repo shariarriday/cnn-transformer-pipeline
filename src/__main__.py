@@ -7,50 +7,7 @@ from .graph_model import LandmarkPredictor
 from .testing import test_model
 from .training import create_dataloaders, create_test_dataloaders, train_video_classifier
 
-class_names = {'bicycle-crunch': 0,
-               'chair-squats': 1,
-               'clap-patterns': 2,
-               'exaggerated-side-steps': 3,
-               'forward-lunge': 4,
-               'heel-rises': 5,
-               'heel-to-toe-walk': 6,
-               'high-knee-lifts': 7,
-               'hinging': 8,
-               'jab-duck-jab': 9,
-               'leg-extension': 10,
-               'leg-raise': 11,
-               'marching': 12,
-               'neck-stretch': 13,
-               'pivot-punch': 14,
-               'resistance-band-rows': 15,
-               'reverse-lunge': 16,
-               'seated-hamstring-stretch': 17,
-               'seated-jumping-jacks': 18,
-               'seated-leg-lifts': 19,
-               'seated-shoulder-abduction': 20,
-               'seated-shoulder-press': 21,
-               'shoulder-rolls': 22,
-               'side-lunge': 23,
-               'side-stepping': 24,
-               'single-jap-with-forward-arm-pivot-punch': 25,
-               'single-leg-stance': 26,
-               'sit-to-stand': 27,
-               'sitting-bicycle-crunch': 28,
-               'sitting-marching': 29,
-               'sitting-trunk-rotation': 30,
-               'squat': 31,
-               'squat-with-cross-body-punches': 32,
-               'squat-with-crossing-the-midline-with-ue': 33,
-               'standing-shoulder-abduction': 34,
-               'standing-shoulder-press': 35,
-               'standing-with-tandem-stand': 36,
-               'toss-and-catch-a-ball': 37,
-               'trunk-rotation': 38,
-               'walking-with-arm-swings': 39,
-               'wall-push-ups': 40,
-               'weight-shifting-forward-and-backwards': 41,
-               'weight-shifting-side-to-side-with-reaching-up': 42,
-               'wrist-and-fingers-stretch': 43
+class_names = {'bicycle-crunch': 0
                }
 
 
@@ -84,14 +41,13 @@ def main():
     folder_name = args.checkpoint_path + "/" + str(args.num_layers) + \
         "-" + str(args.hidden_dim) + "/"
 
-    print(f"Testing on {device} with model from {folder_name}")
-
     # Create checkpoint directory if it doesn't exist
     import os
     if not os.path.exists(folder_name):
         os.makedirs(folder_name)
 
     if args.test_path != 'default':
+        print(f"Testing on {device} with model from {folder_name}")
 
         for class_name in class_names.keys():
             # Load label maps from the training phase

@@ -42,62 +42,48 @@ class GraphSpatialEncoder(nn.Module):
     def __init__(self, num_nodes=33, input_dim=3, hidden_dim=64, use_mask=False):
         super(GraphSpatialEncoder, self).__init__()
 
-        # 1. Geometry
         self.num_nodes = num_nodes
+        self.use_mask = use_mask
+
+        # 1. Geometry with Self-Loops (A + I)
         fixed_adj = get_mediapipe_skeleton(num_nodes)
+        fixed_adj = fixed_adj + torch.eye(num_nodes)
         self.register_buffer('adj', fixed_adj)
 
-        self.use_mask = use_mask
         if use_mask:
-            self.learnable_adj = nn.Parameter(
-                torch.zeros(num_nodes, num_nodes))
+            # Multiplicative mask initialized to 1
+            self.edge_mask = nn.Parameter(torch.ones(num_nodes, num_nodes))
 
         # 2. Graph Convolution Layers
-        # We project the input coords to a higher feature space per node
         self.gcn_1 = nn.Linear(input_dim, 32)
         self.gcn_2 = nn.Linear(32, 64)
 
-        # 3. Aggregation (Graph Readout)
-        # We need to flatten the 33 nodes into one vector per frame for the LSTM
-        # Input: 33 nodes * 128 features = 4224
-        self.projection = nn.Linear(num_nodes * 64, hidden_dim)
-
+        # 3. Aggregation (Pooling instead of flattening)
+        self.projection = nn.Linear(64, hidden_dim)
         self.dropout = nn.Dropout(0.5)
-        self.relu = nn.Tanh()
+        self.relu = nn.ReLU()  # Swapped from Tanh
 
     def forward(self, x):
-        """
-        Input: (Batch, Time, Nodes, Coords) -> e.g. (B, T, 33, 3)
-        Output: (Batch, Time, Hidden_Dim)
-        """
         batch, seq_len, nodes, coords = x.shape
+        x = x.reshape(batch * seq_len, nodes, coords)
 
-        # Merge Batch and Time for spatial processing
-        # (B*T, 33, 3)
-        x = x.view(batch * seq_len, nodes, coords)
-
-        # Prepare Adjacency
-        curr_adj = self.adj + self.learnable_adj if self.use_mask else self.adj
+        # Apply learnable edge weighting
+        curr_adj = self.adj * self.edge_mask if self.use_mask else self.adj
 
         # --- Layer 1 ---
-        # A * X * W
-        support = torch.matmul(curr_adj, x)  # (B*T, 33, 3)
-        x = self.relu(self.gcn_1(support))  # (B*T, 33, 64)
+        support = torch.matmul(curr_adj, x)
+        x = self.relu(self.gcn_1(support))
 
         # --- Layer 2 ---
         support = torch.matmul(curr_adj, x)
-        x = self.relu(self.gcn_2(support))  # (B*T, 33, 128)
+        x = self.relu(self.gcn_2(support))
 
-        # --- Aggregation ---
-        # Flatten nodes: (B*T, 33*128)
-        x = x.view(batch * seq_len, -1)
+        # --- Aggregation (Global Average Pooling) ---
+        x = torch.mean(x, dim=1)  # Shape: (B*T, 64)
 
-        # Project to single embedding: (B*T, Hidden_Dim)
         x = self.projection(x)
         x = self.dropout(x)
 
-        # Restore Batch and Time dimensions
-        # Output: (Batch, Time, Hidden_Dim)
         return x.view(batch, seq_len, -1)
 
 
@@ -119,14 +105,17 @@ class LandmarkPredictor(nn.Module):
             hidden_size=lstm_hidden,
             num_layers=num_layers,
             batch_first=True,
-            dropout=0.5
+            dropout=0.5,
+            bidirectional=True
         )
 
         # 3. Final Prediction Head
         # Projects LSTM output back to 33 landmarks
-        self.head = nn.Linear(lstm_hidden, num_nodes * input_dim)
+        self.head = nn.Linear(lstm_hidden * 2, num_nodes * input_dim)
 
         self.act = nn.Tanh()
+
+        self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):
         """
@@ -142,6 +131,8 @@ class LandmarkPredictor(nn.Module):
         lstm_out, (h_n, c_n) = self.lstm(spatial_features)
 
         predictions = self.head(lstm_out[:, -1, :])
+
+        predictions = self.dropout(predictions)
 
         predictions = self.act(predictions)
 
